@@ -1,0 +1,5 @@
+Welcome to the Arch Hurd installation program. The installation process is quite straight forward and you should feel right at home if you have ever installed Arch Linux. If you are unfamiliar with Arch Hurd, you may wish to consult the wiki before proceeding.
+
+The source for this installation will be a package cache on this installation ISO, which consists of a snapshot of the core repository. As these packages could be outdated, update your system after you first boot it.
+
+Note that there may be bugs in this software, and so you should make backups of any data you wish to keep before running this.

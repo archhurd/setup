@@ -1,0 +1,128 @@
+#!/bin/bash
+
+NAME="Arch Hurd Installation"
+DESC="`cat description`"
+MENU="Use the UP and DOWN keys to navigate the menus. Use TAB to switch between buttons and ENTER to select."
+NYE="Not yet implemented."
+
+running=true
+
+function partdetect()
+{
+    echo "Please wait while partitions are detected..."
+    pushd /dev
+    for device in hd[0-9]; do
+        echo -n "/dev/$device:"
+        rm ${device}s*
+
+        while read part; do
+            echo -n " $part"
+            MAKEDEV $part
+        done < $(sfdisk -d $device | cut -d' ' -f1 | grep $device | sed 's/\/dev\///' | sed 's/p/s/')
+
+        echo "."
+    done
+    popd
+}
+
+function welcome()
+{
+    dialog --title "$NAME" --msgbox "$DESC" 17 70
+}
+
+function mainmenu()
+{
+    dialog --title "Main Menu" --menu "$MENU" 20 45 10 \
+        1 "Prepare Hard Drive(s)" \
+        2 "Select Packages" \
+        3 "Install Packages" \
+        4 "Configure System" \
+        5 "Install Bootloader" \
+        6 "Exit Install" 2>answer
+
+    ans=`cat answer`
+    rm answer
+
+    case "$ans" in
+        "1")      # Prepare Hard Drive(s)
+            prephdds
+            ;;
+        "2")      # Select Packages
+            choosepkg
+            ;;
+        "3")      # Install Packages
+            installpkg
+            ;;
+        "4")      # Configure System
+            sysconf
+            ;;
+        "5")      # Install Bootloader
+            installgrub
+            ;;
+        "6" | "") # Exit Install
+            yousure && exit
+            ;;
+    esac
+}
+
+function prephdds()
+{
+    sect="Prepare Hard Drive(s)"
+    dialog --title "$sect" --msgbox "Ensure any /dev/hd[0-9] nodes have been created with MAKEDEV before continuing. You do not need to create the individual partition nodes (/dev/hd[0-9]s*), these will be created automatically." 7 70
+
+    ans="1"
+    while [[ "$ans" != "" ]] && [[ "$ans" != "4" ]]; do
+        partdetect
+
+        dialog --title "$sect" --menu "$MENU" 20 45 10 \
+            1 "Partition hard drives" \
+            2 "Format partitions" \
+            3 "Choose mount points" \
+            4 "Return to Main Menu" 2>answer
+
+        ans=`cat answer`
+        rm answer
+
+        case "$ans" in
+            "1") # Partition hard drives
+                ;;
+            "2") # Format partitions
+                ;;
+            "3") # Choose mount points
+                ;;
+        esac
+    done
+}
+
+function choosepkg()
+{
+    dialog --title "Select Packages" --msgbox "$NYE" 5 40
+}
+
+function installpkg()
+{
+    dialog --title "Install Packages" --msgbox "$NYE" 5 40
+}
+
+function sysconf()
+{
+    dialog --title "Configure System" --msgbox "$NYE" 5 40
+}
+
+function installgrub()
+{
+    dialog --title "Install Bootloader" --msgbox "$NYE" 5 40
+}
+
+function yousure()
+{
+    dialog --title "$NAME" --yesno "Are you sure you want to exit the installation?" 6 40
+}
+
+echo "$NAME starting..."
+
+welcome
+
+while true; do
+    mainmenu
+done
