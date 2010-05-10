@@ -4,23 +4,20 @@ NAME="Arch Hurd Installation"
 DESC="`cat description`"
 MENU="Use the UP and DOWN keys to navigate the menus. Use TAB to switch between buttons and ENTER to select."
 NYE="Not yet implemented."
+ANSFILE="/tmp/$ANSFILE"
 
 running=true
 
 function partdetect()
 {
-    echo "Please wait while partitions are detected..."
     pushd /dev
     for device in hd[0-9]; do
-        echo -n "/dev/$device:"
         rm ${device}s*
 
         while read part; do
-            echo -n " $part"
+            echo "/dev/$part"
             MAKEDEV $part
         done < $(sfdisk -d $device | cut -d' ' -f1 | grep $device | sed 's/\/dev\///' | sed 's/p/s/')
-
-        echo "."
     done
     popd
 }
@@ -38,10 +35,10 @@ function mainmenu()
         3 "Install Packages" \
         4 "Configure System" \
         5 "Install Bootloader" \
-        6 "Exit Install" 2>answer
+        6 "Exit Install" 2>$ANSFILE
 
-    ans=`cat answer`
-    rm answer
+    ans=`cat $ANSFILE`
+    rm $ANSFILE
 
     case "$ans" in
         "1")      # Prepare Hard Drive(s)
@@ -72,23 +69,68 @@ function prephdds()
 
     ans="1"
     while [[ "$ans" != "" ]] && [[ "$ans" != "4" ]]; do
-        partdetect
+        pas=`partdetect`
+
+        disks=""
+        parts=""
+
+        count=1
+        for device in /dev/hd[0-9]; do
+            disks="$disks $count $device"
+            count=$[ $count + 1 ]
+        fi
+
+        count=1
+        for pa in $pas; do
+            parts="$parts $count $pa"
+            count=$[ $count + 1 ]
+        fi
 
         dialog --title "$sect" --menu "$MENU" 20 45 10 \
             1 "Partition hard drives" \
             2 "Format partitions" \
             3 "Choose mount points" \
-            4 "Return to Main Menu" 2>answer
+            4 "Return to Main Menu" 2>$ANSFILE
 
-        ans=`cat answer`
-        rm answer
+        ans=`cat $ANSFILE`
+        rm $ANSFILE
 
         case "$ans" in
             "1") # Partition hard drives
+                dialog --title "Partition hard drives" --menu "$MENU" 20 45 10 $disks 2>$ANSFILE
+		ans=`cat $ANSFILE`
+		rm $ANSFILE
+
+		if [[ -e $ans ]]; then
+		    yousuredata && cfdisk $ans
+		fi
                 ;;
             "2") # Format partitions
+                dialog --title "Format partitions" --menu "$MENU" 20 45 10 $parts 2>$ANSFILE
+		ans=`cat $ANSFILE`
+		rm $ANSFILE
+
+		if [[ -e $ans ]]; then
+                    dialog --title "Format partitions" --menu "$MENU" 20 45 10 \
+			1 "ext2" \
+			2 "swap" 2>$ANSFILE
+		    ans2=`cat $ANSFILE`
+		    rm $ANSFILE
+		    
+		    case $ans2 in
+			"ext2")
+			    yousuredata && mkfs.ext2 $ans
+			    ;;
+			"swap")
+			    yousuredata && mkswap $ans
+			    ;;
+		    esac
+		fi
                 ;;
             "3") # Choose mount points
+                dialog --title "Choose mount points" --menu "$MENU" 20 45 10 $parts 2>$ANSFILE
+		ans=`cat $ANSFILE`
+		rm $ANSFILE
                 ;;
         esac
     done
@@ -117,6 +159,11 @@ function installgrub()
 function yousure()
 {
     dialog --title "$NAME" --yesno "Are you sure you want to exit the installation?" 6 40
+}
+
+function yousuredata()
+{
+    dialog --title "Warning" --yesno "This will destroy data on your HDD. Are you sure you want to continue?" 6 40
 }
 
 echo "$NAME starting..."
