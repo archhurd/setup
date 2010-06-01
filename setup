@@ -1,12 +1,12 @@
 #!/bin/bash
 
 NAME="Arch Hurd Installation"
-DESC="`cat description`"
+DESC="`cat /arch/description`"
 MENU="Use the UP and DOWN keys to navigate the menus. Use TAB to switch between buttons and ENTER to select."
-NYE="Not yet implemented."
-ANSFILE="/tmp/$ANSFILE"
-
-running=true
+ANSFILE="/tmp/ans"
+MOUNTFILE="/tmp/mountpoints"
+PKGSFILE="/tmp/packages"
+CONFIGS="`cat /arch/configs`"
 
 function partdetect()
 {
@@ -29,71 +29,68 @@ function welcome()
 
 function mainmenu()
 {
-    dialog --title "Main Menu" --menu "$MENU" 20 45 10 \
-        1 "Prepare Hard Drive(s)" \
-        2 "Select Packages" \
-        3 "Install Packages" \
-        4 "Configure System" \
-        5 "Install Bootloader" \
-        6 "Exit Install" 2>$ANSFILE
-
-    ans=`cat $ANSFILE`
-    rm $ANSFILE
-
-    case "$ans" in
-        "1")      # Prepare Hard Drive(s)
-            prephdds
-            ;;
-        "2")      # Select Packages
-            choosepkg
-            ;;
-        "3")      # Install Packages
-            installpkg
-            ;;
-        "4")      # Configure System
-            sysconf
-            ;;
-        "5")      # Install Bootloader
-            installgrub
-            ;;
-        "6" | "") # Exit Install
-            yousure && exit
-            ;;
-    esac
+    ans=1
+    while [[ "$ans" != "" ]] && [[ "$ans" != "6" ]]; do
+	ans=`showmenu "Main Menu" \
+            1 "Prepare Hard Drive(s)" \
+            2 "Select Packages" \
+            3 "Install Packages" \
+            4 "Configure System" \
+            5 "Install Bootloader" \
+            6 "Exit Install"`
+	
+	case "$ans" in
+            "1")      # Prepare Hard Drive(s)
+		prephdds
+		;;
+            "2")      # Select Packages
+		choosepkg
+		;;
+            "3")      # Install Packages
+		installpkg
+		;;
+            "4")      # Configure System
+		sysconf
+		;;
+            "5")      # Install Bootloader
+		installgrub
+		;;
+            "6" | "") # Exit Install
+		yousure && exit
+		;;
+	esac
+    done
 }
 
 function prephdds()
 {
     sect="Prepare Hard Drive(s)"
-    dialog --title "$sect" --msgbox "Ensure any /dev/hd[0-9] nodes have been created with MAKEDEV before continuing. You do not need to create the individual partition nodes (/dev/hd[0-9]s*), these will be created automatically." 7 70
+    showmsg "$sect" "Ensure any /dev/hd[0-9] nodes have been created with MAKEDEV before continuing. You do not need to create the individual partition nodes (/dev/hd[0-9]s[1-9]+), these will be created automatically."
 
+    pas=`partdetect`
+    
+    disks=""
+    parts=""
+    
+    dcount=1
+    for device in /dev/hd[0-9]; do
+        disks="$disks $dcount $device"
+        dcount=$[ $dcount + 1 ]
+    done
+	
+    pcount=1
+    for pa in $pas; do
+        parts="$parts $pcount $pa"
+        pcount=$[ $pcount + 1 ]
+    done
+	    
     ans="1"
     while [[ "$ans" != "" ]] && [[ "$ans" != "4" ]]; do
-        pas=`partdetect`
-
-        disks=""
-        parts=""
-
-        count=1
-        for device in /dev/hd[0-9]; do
-            disks="$disks $count $device"
-            count=$[ $count + 1 ]
-        fi
-
-        count=1
-        for pa in $pas; do
-            parts="$parts $count $pa"
-            count=$[ $count + 1 ]
-        fi
-
-        dialog --title "$sect" --menu "$MENU" 20 45 10 \
+        ans=`showmenu "$sect" \
             1 "Partition hard drives" \
             2 "Format partitions" \
             3 "Choose mount points" \
-            4 "Return to Main Menu" 2>$ANSFILE
-
-        ans=`cat $ANSFILE`
-        rm $ANSFILE
+            4 "Return to Main Menu"`
 
         case "$ans" in
             "1") # Partition hard drives
@@ -104,66 +101,193 @@ function prephdds()
 		if [[ -e $ans ]]; then
 		    yousuredata && cfdisk $ans
 		fi
-                ;;
-            "2") # Format partitions
-                dialog --title "Format partitions" --menu "$MENU" 20 45 10 $parts 2>$ANSFILE
-		ans=`cat $ANSFILE`
-		rm $ANSFILE
 
-		if [[ -e $ans ]]; then
-                    dialog --title "Format partitions" --menu "$MENU" 20 45 10 \
-			1 "ext2" \
-			2 "swap" 2>$ANSFILE
-		    ans2=`cat $ANSFILE`
-		    rm $ANSFILE
-		    
-		    case $ans2 in
-			"ext2")
-			    yousuredata && mkfs.ext2 $ans
-			    ;;
-			"swap")
-			    yousuredata && mkswap $ans
-			    ;;
-		    esac
-		fi
+		yesno "Reboot required" "You must reboot for GNU Mach to re-read the partition tables, do you wish to do so now?" && reboot
                 ;;
+
+            "2") # Format partitions
+		ans=0
+		while [[ "$ans" != "$pcount" ]]; do
+		    ans=`showmenu "Format partitions" $parts $pcount "Return"`
+
+		    if [[ -e $ans ]]; then
+			ans2=`showmenu "Format partitions" 1 "ext2" 2 "swap"`
+			
+			case $ans2 in
+			    "ext2")
+				yousuredata && mkfs.ext2 $ans
+				;;
+			    "swap")
+				yousuredata && mkswap $ans
+				;;
+			esac
+		    fi
+		done
+                ;;
+
             "3") # Choose mount points
-                dialog --title "Choose mount points" --menu "$MENU" 20 45 10 $parts 2>$ANSFILE
-		ans=`cat $ANSFILE`
-		rm $ANSFILE
-                ;;
+		ans=0
+		while [[ "$ans" != "$pcount" ]]; do
+		    ans1=`showmenu "Choose mount points" $parts`
+		    ans2=`showprompt "Choose mount points" "Enter mount location (or 'swap'):"`
+		    
+		    if grep -q "$ans1:" $MOUNTFILE; then
+			mpoint=`grep -q "$ans1:" $MOUNTFILE | sed 's/.*://'`
+			yesno "Conflicting mount point" "$ans1 is already mounted to $mpoint; continue, removing the preexisting mount point?" && sed '/$ans1:.*/d'
+		    fi
+		    
+		    if grep -q ":$ans2" $MOUNTFILE && [[ "$ans2" != "swap" ]]; then
+			mpoint=`grep -q "$ans1:" $MOUNTFILE | sed 's/:.*//'`
+			yesno "Conflicting mount point" "$ans2 is already in use by $mpoint; continue, removing the preexisting mount point?" && sed '/.*:$ans2/d'
+		    fi
+		    
+		    echo "$ans1:$ans2" >> $MOUNTFILE
+		done
+		;;
         esac
     done
 }
 
 function choosepkg()
 {
-    dialog --title "Select Packages" --msgbox "$NYE" 5 40
+    sect="Select Packages"
+    
+    if [[ -e $MOUNTFILE ]]; then
+	packages=""
+	pacman -Qqg base base-devel | sort | \
+	while read pkg; do
+	    on="on"
+	    if [[ -f $PKGSFILE ]] && ! grep -q $pkg $PKGSFILE; then
+		on="off"
+	    fi
+
+	    packages="$packages $pkg \"`pacman -Qi $pkg | grep Description | sed 's/.*: //'`\" $on"
+	done
+
+	dialog --checklist "$sect" 20 45 10 $packages 2>$PKGSFILE
+	tr -d '"' < $PKGSFILE | tr ' ' "\n" > $PKGSFILE
+    else
+	showmsg "$sect" "You need to prepare the hard drives before you can do this!"
+    fi
 }
 
 function installpkg()
 {
-    dialog --title "Install Packages" --msgbox "$NYE" 5 40
+    sect="Install Packages"
+
+    if [[ -e $PKGSFILE ]]; then
+	if yesno "$sect" "Are you sure you want to comit to the installation?"; then
+	    sort $MOUNTFILE | \
+	    while read $mount; do
+		device=`echo $mount | sed 's/:.*//'`
+		mpoint=`echo $mount | sed 's/.*://'`
+
+		if [[ "$device" == "swap" ]]; then
+		    echo "$device none swap sw 0 0" >> /tmp/fstab
+		else
+		    dpass="0 0"
+		    if [[ "$mpoint" == "/" ]]; then
+			dpass="1 1"
+		    fi
+
+		    echo "$device $mpoint ext2 rw $dpass" >> /tmp/fstab
+
+		    if [[ ! -d /mnt$mpoint ]]; then
+			mkdir -p /mnt$mpoint
+		    fi
+
+		    mount -t ext2 $device /mnt$mpoint
+		fi
+
+		mv /tmp/fstab /mnt/etc/fstab
+
+		clear
+		pacman -S $(cat $PKGFILE) --noconfirm --config /etc/pacman-mnt.conf
+		showmsg "$sect" "Packages have been installed."
+	    done
+	fi
+    else
+	showmsg "$sect" "You need to select the packages before you can do this!"
+    fi
 }
 
 function sysconf()
 {
-    dialog --title "Configure System" --msgbox "$NYE" 5 40
+    sect="Configure System"
+
+    if [[ -f /mnt/etc/fstab ]]; then
+	ans=0
+	while ! echo $CONFIGS | grep -q "^$ans Return"; do
+	    ans=`showmenu "$sect" $CONFIGS`
+
+	    cfg=`echo $CONFIGS | grep -q "^$ans" | sed 's/$ans //'`
+	    if [[ -e /mnt$cfg ]]; then
+		nano /mnt$cfg
+	    elif [[ "$cfg" == "\"Root Password\"" ]]; then
+		chroot /mnt "passwd root"
+	    fi
+	done
+    else
+	showmsg "$sect" "You need to install the packages before you can do this!"
+    fi
 }
 
 function installgrub()
 {
-    dialog --title "Install Bootloader" --msgbox "$NYE" 5 40
+    sect="Install Bootloader"
+    if [[ -f /mnt/etc/fstab ]]; then
+	cp -a /mnt/lib/grub/i386-pc/* /mnt/boot/grub/
+
+	showmsg "$sect" "You must edit the GRUB configuration before you can continue."
+	nano /mnt/boot/grub/menu.lst
+
+	ans=`showprompt "$sect" "Enter device to install GRUB to:"`
+	grub-install $ans
+	
+	showmsg "$sect" "GRUB has been installed. You should now reboot into your newly-installed Arch Hurd system."
+    else
+	showmsg "$sect" "You need to install the packages before you can do this!"
+    fi
+}
+
+function yesno()
+{
+    dialog --title "$1" --yesno "$2" 6 40
 }
 
 function yousure()
 {
-    dialog --title "$NAME" --yesno "Are you sure you want to exit the installation?" 6 40
+    yesno "$NAME" "Are you sure you want to exit the installation?"
 }
 
 function yousuredata()
 {
-    dialog --title "Warning" --yesno "This will destroy data on your HDD. Are you sure you want to continue?" 6 40
+    yesno "Warning" "This will destroy data on your HDD. Are you sure you want to continue?"
+}
+
+function showmsg()
+{
+    dialog --title "$1" --msgbox "$2" 7 70
+}
+
+function showmenu()
+{
+    title="$1" && shift
+
+    dialog --title "$title" --menu "$MENU" 20 45 10 $* 2>$ANSFILE
+    tmpans=`cat $ANSFILE`
+    rm $ANSFILE
+
+    echo $tmpans
+}
+
+function showprompt()
+{
+    dialog --title "$1" --inputbox "$2" 20 45 2>$ANSFILE
+    tmpans=`cat $ANSFILE`
+    rm $ANSFILE 
+
+    echo $tmpans
 }
 
 echo "$NAME starting..."

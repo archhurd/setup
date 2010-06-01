@@ -1,0 +1,10 @@
+1  /etc/rc.conf
+2  /etc/pacman.conf
+3  /etc/fstab
+4  /etc/locale.gen
+5  /etc/hosts
+6  /etc/hosts.allow
+7  /etc/hosts.deny
+8  /etc/resolv.conf
+9  "Root Password"
+10 Return
