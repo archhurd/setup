@@ -8,20 +8,6 @@ MOUNTFILE="/tmp/mountpoints"
 PKGSFILE="/tmp/packages"
 CONFIGS="`cat /arch/configs`"
 
-function partdetect()
-{
-    pushd /dev
-    for device in hd[0-9]; do
-        rm ${device}s*
-
-        while read part; do
-            echo "/dev/$part"
-            MAKEDEV $part
-        done < $(sfdisk -d $device | cut -d' ' -f1 | grep $device | sed 's/\/dev\///' | sed 's/p/s/')
-    done
-    popd
-}
-
 function welcome()
 {
     dialog --title "$NAME" --msgbox "$DESC" 17 70
@@ -31,13 +17,15 @@ function mainmenu()
 {
     ans=1
     while [[ "$ans" != "" ]] && [[ "$ans" != "6" ]]; do
-	ans=`showmenu "Main Menu" \
+	dialog --title "Main Menu" --menu "$MENU" 20 45 10 \
             1 "Prepare Hard Drive(s)" \
             2 "Select Packages" \
             3 "Install Packages" \
             4 "Configure System" \
             5 "Install Bootloader" \
-            6 "Exit Install"`
+            6 "Exit Install" 2>$ANSFILE
+	ans=`cat $ANSFILE`
+	rm $ANSFILE
 	
 	case "$ans" in
             "1")      # Prepare Hard Drive(s)
@@ -65,38 +53,42 @@ function mainmenu()
 function prephdds()
 {
     sect="Prepare Hard Drive(s)"
-    showmsg "$sect" "Ensure any /dev/hd[0-9] nodes have been created with MAKEDEV before continuing. You do not need to create the individual partition nodes (/dev/hd[0-9]s[1-9]+), these will be created automatically."
+    showmsg "$sect" "Ensure any hard drive and partition device nodes have been created with MAKEDEV before continuing."
 
-    pas=`partdetect`
+    pas=`ls /dev/hd[0-9]s*`
     
     disks=""
     parts=""
     
     dcount=1
     for device in /dev/hd[0-9]; do
-        disks="$disks $dcount $device"
+        disks="${disks} ${dcount} ${device}"
         dcount=$[ $dcount + 1 ]
     done
 	
     pcount=1
     for pa in $pas; do
-        parts="$parts $pcount $pa"
+        parts="${parts} ${pcount} ${pa}"
         pcount=$[ $pcount + 1 ]
     done
-	    
+    
     ans="1"
     while [[ "$ans" != "" ]] && [[ "$ans" != "4" ]]; do
-        ans=`showmenu "$sect" \
+	dialog --title "$sect" --menu "$MENU" 20 45 10 \
             1 "Partition hard drives" \
             2 "Format partitions" \
             3 "Choose mount points" \
-            4 "Return to Main Menu"`
+            4 "Return to Main Menu" 2>$ANSFILE
+	ans=`cat $ANSFILE`
+	rm $ANSFILE
 
         case "$ans" in
             "1") # Partition hard drives
                 dialog --title "Partition hard drives" --menu "$MENU" 20 45 10 $disks 2>$ANSFILE
 		ans=`cat $ANSFILE`
 		rm $ANSFILE
+
+		ans=`echo "$disks" | sed "s/.* $ans \(\/dev\/hd[0-9]\).*/\1/"`
 
 		if [[ -e $ans ]]; then
 		    yousuredata && cfdisk $ans
@@ -108,40 +100,64 @@ function prephdds()
             "2") # Format partitions
 		ans=0
 		while [[ "$ans" != "$pcount" ]]; do
-		    ans=`showmenu "Format partitions" $parts $pcount "Return"`
+		    dialog --title "Format Partitions" --menu "$MENU" 20 45 10 $parts $pcount Return 2>$ANSFILE
+		    ans=`cat $ANSFILE`
+		    rm $ANSFILE
 
-		    if [[ -e $ans ]]; then
-			ans2=`showmenu "Format partitions" 1 "ext2" 2 "swap"`
+		    if [[ "$ans" != "$pcount" ]]; then
+			ans=`echo "$parts" | sed "s/.* $ans \(\/dev\/hd[0-9]s[1-9]\).*/\1/"`
 			
-			case $ans2 in
-			    "ext2")
-				yousuredata && mkfs.ext2 $ans
-				;;
-			    "swap")
-				yousuredata && mkswap $ans
-				;;
-			esac
+			if [[ -e $ans ]]; then
+			    dialog --title "Format Partitions" --menu "$MENU" 20 45 10 1 "ext2" 2 "swap" 2>$ANSFILE
+			    ans2=`cat $ANSFILE`
+			    rm $ANSFILE
+			    
+			    case $ans2 in
+				"1")
+				    yousuredata && mkfs.ext2 $ans
+				    ;;
+				"2")
+				    yousuredata && mkswap $ans
+				    ;;
+			    esac
+			fi
 		    fi
 		done
                 ;;
 
             "3") # Choose mount points
 		ans=0
-		while [[ "$ans" != "$pcount" ]]; do
-		    ans1=`showmenu "Choose mount points" $parts`
-		    ans2=`showprompt "Choose mount points" "Enter mount location (or 'swap'):"`
+		while [[ "$ans1" != "$pcount" ]]; do
+		    dialog --title "Choose mount points" --menu "$MENU" 20 45 10 $parts $pcount "Return" 2>$ANSFILE
+		    ans1=`cat $ANSFILE`
+		    rm $ANSFILE
+
+		    if [[ "$ans1" != "$pcount" ]]; then
+			ans1=`echo "$parts" | sed "s/.* $ans1 \(\/dev\/hd[0-9]s[1-9]\).*/\1/"`
+
+			dialog --title "Choose mount points" --inputbox "Enter mount location (or 'swap'):" 20 45 2>$ANSFILE
+			ans2=`cat $ANSFILE`
+			rm $ANSFILE 
+			
+			if grep -q "$ans1:" $MOUNTFILE; then
+			    mpoint=`grep "$ans1:" $MOUNTFILE | sed 's/.*://'`
+			    nans1=$(echo "$ans1" | sed 's/\//\\\//g')
+
+			    yesno "Conflicting mount point" "$ans1 is already mounted to $mpoint; continue, removing the preexisting mount point?" && sed -i "/^$nans2:.*\$/d" $MOUNTFILE
+			fi
+			
+			if grep -q ":$ans2" $MOUNTFILE && [[ "$ans2" != "swap" ]]; then
+			    mpoint=`grep ":$ans2" $MOUNTFILE | sed 's/:.*//'`
+			    nans2=$(echo "$ans2" | sed 's/\//\\\//g')
+
+			    yesno "Conflicting mount point" "$ans2 is already in use by $mpoint; continue, removing the preexisting mount point?" && sed -i "/^.*:$nans2\$/d" $MOUNTFILE
+			    
+			    echo "/^.*:$nans2\$/d"
+			    read
+			fi
 		    
-		    if grep -q "$ans1:" $MOUNTFILE; then
-			mpoint=`grep -q "$ans1:" $MOUNTFILE | sed 's/.*://'`
-			yesno "Conflicting mount point" "$ans1 is already mounted to $mpoint; continue, removing the preexisting mount point?" && sed '/$ans1:.*/d'
+			echo "$ans1:$ans2" >> $MOUNTFILE
 		    fi
-		    
-		    if grep -q ":$ans2" $MOUNTFILE && [[ "$ans2" != "swap" ]]; then
-			mpoint=`grep -q "$ans1:" $MOUNTFILE | sed 's/:.*//'`
-			yesno "Conflicting mount point" "$ans2 is already in use by $mpoint; continue, removing the preexisting mount point?" && sed '/.*:$ans2/d'
-		    fi
-		    
-		    echo "$ans1:$ans2" >> $MOUNTFILE
 		done
 		;;
         esac
@@ -202,6 +218,7 @@ function installpkg()
 		mv /tmp/fstab /mnt/etc/fstab
 
 		clear
+		mkdir -p /mnt/var/lib/pacman
 		pacman -S $(cat $PKGFILE) --noconfirm --config /etc/pacman-mnt.conf
 		showmsg "$sect" "Packages have been installed."
 	    done
@@ -218,7 +235,9 @@ function sysconf()
     if [[ -f /mnt/etc/fstab ]]; then
 	ans=0
 	while ! echo $CONFIGS | grep -q "^$ans Return"; do
-	    ans=`showmenu "$sect" $CONFIGS`
+	    dialog --title "$sect" --menu "$MENU" 20 45 10 $CONFIGS 2>$ANSFILE
+	    ans=`cat $ANSFILE`
+	    rm $ANSFILE
 
 	    cfg=`echo $CONFIGS | grep -q "^$ans" | sed 's/$ans //'`
 	    if [[ -e /mnt$cfg ]]; then
@@ -241,7 +260,10 @@ function installgrub()
 	showmsg "$sect" "You must edit the GRUB configuration before you can continue."
 	nano /mnt/boot/grub/menu.lst
 
-	ans=`showprompt "$sect" "Enter device to install GRUB to:"`
+	dialog --title "$sect" --inputbox "Enter device to install GRUB to:" 20 45 2>$ANSFILE
+	ans=`cat $ANSFILE`
+	rm $ANSFILE 
+
 	grub-install $ans
 	
 	showmsg "$sect" "GRUB has been installed. You should now reboot into your newly-installed Arch Hurd system."
@@ -267,33 +289,9 @@ function yousuredata()
 
 function showmsg()
 {
-    dialog --title "$1" --msgbox "$2" 7 70
-}
-
-function showmenu()
-{
-    title="$1" && shift
-
-    dialog --title "$title" --menu "$MENU" 20 45 10 $* 2>$ANSFILE
-    tmpans=`cat $ANSFILE`
-    rm $ANSFILE
-
-    echo $tmpans
-}
-
-function showprompt()
-{
-    dialog --title "$1" --inputbox "$2" 20 45 2>$ANSFILE
-    tmpans=`cat $ANSFILE`
-    rm $ANSFILE 
-
-    echo $tmpans
+    dialog --title "$1" --msgbox "$2" 8 70
 }
 
 echo "$NAME starting..."
-
 welcome
-
-while true; do
-    mainmenu
-done
+mainmenu
