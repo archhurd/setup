@@ -6,7 +6,7 @@ MENU="Use the UP and DOWN keys to navigate the menus. Use TAB to switch between 
 ANSFILE="/tmp/ans"
 MOUNTFILE="/tmp/mountpoints"
 PKGSFILE="/tmp/packages"
-CONFIGS="`cat /arch/configs`"
+INSTALLDIR="/mnt/install"
 
 function welcome()
 {
@@ -85,39 +85,39 @@ function prephdds()
         case "$ans" in
             "1") # Partition hard drives
                 dialog --title "Partition hard drives" --menu "$MENU" 20 45 10 $disks 2>$ANSFILE
-		ans=`cat $ANSFILE`
+		ans1=`cat $ANSFILE`
 		rm $ANSFILE
 
-		ans=`echo "$disks" | sed "s/.* $ans \(\/dev\/hd[0-9]\).*/\1/"`
+		ans1=`echo "$disks" | sed "s/.* $ans1 \(\/dev\/hd[0-9]\).*/\1/"`
 
-		if [[ -e $ans ]]; then
-		    yousuredata && cfdisk $ans
+		if [[ -e $ans1 ]]; then
+		    yousuredata && cfdisk $ans1
 		fi
 
 		yesno "Reboot required" "You must reboot for GNU Mach to re-read the partition tables, do you wish to do so now?" && reboot
                 ;;
 
             "2") # Format partitions
-		ans=0
-		while [[ "$ans" != "$pcount" ]]; do
+		ans1=0
+		while [[ "$ans1" != "$pcount" ]]; do
 		    dialog --title "Format Partitions" --menu "$MENU" 20 45 10 $parts $pcount Return 2>$ANSFILE
-		    ans=`cat $ANSFILE`
+		    ans1=`cat $ANSFILE`
 		    rm $ANSFILE
 
-		    if [[ "$ans" != "$pcount" ]]; then
-			ans=`echo "$parts" | sed "s/.* $ans \(\/dev\/hd[0-9]s[1-9]\).*/\1/"`
+		    if [[ "$ans1" != "$pcount" ]]; then
+			ans1=`echo "$parts" | sed "s/.* $ans1 \(\/dev\/hd[0-9]s[1-9]\).*/\1/"`
 			
-			if [[ -e $ans ]]; then
+			if [[ -e $ans1 ]]; then
 			    dialog --title "Format Partitions" --menu "$MENU" 20 45 10 1 "ext2" 2 "swap" 2>$ANSFILE
 			    ans2=`cat $ANSFILE`
 			    rm $ANSFILE
 			    
 			    case $ans2 in
 				"1")
-				    yousuredata && mkfs.ext2 $ans
+				    yousuredata && mkfs.ext2 -b 4096 -I 128 -o hurd $ans1
 				    ;;
 				"2")
-				    yousuredata && mkswap $ans
+				    yousuredata && mkswap $ans1
 				    ;;
 			    esac
 			fi
@@ -135,7 +135,7 @@ function prephdds()
 		    if [[ "$ans1" != "$pcount" ]]; then
 			ans1=`echo "$parts" | sed "s/.* $ans1 \(\/dev\/hd[0-9]s[1-9]\).*/\1/"`
 
-			dialog --title "Choose mount points" --inputbox "Enter mount location (or 'swap'):" 20 45 2>$ANSFILE
+			dialog --title "Choose mount points" --inputbox "Enter mount location (or 'swap'):" 10 45 2>$ANSFILE
 			ans2=`cat $ANSFILE`
 			rm $ANSFILE 
 			
@@ -143,7 +143,7 @@ function prephdds()
 			    mpoint=`grep "$ans1:" $MOUNTFILE | sed 's/.*://'`
 			    nans1=$(echo "$ans1" | sed 's/\//\\\//g')
 
-			    yesno "Conflicting mount point" "$ans1 is already mounted to $mpoint; continue, removing the preexisting mount point?" && sed -i "/^$nans2:.*\$/d" $MOUNTFILE
+			    yesno "Conflicting mount point" "$ans1 is already mounted to $mpoint; continue, removing the preexisting mount point?" && sed -i "/^$nans1:.*\$/d" $MOUNTFILE
 			fi
 			
 			if grep -q ":$ans2" $MOUNTFILE && [[ "$ans2" != "swap" ]]; then
@@ -151,9 +151,6 @@ function prephdds()
 			    nans2=$(echo "$ans2" | sed 's/\//\\\//g')
 
 			    yesno "Conflicting mount point" "$ans2 is already in use by $mpoint; continue, removing the preexisting mount point?" && sed -i "/^.*:$nans2\$/d" $MOUNTFILE
-			    
-			    echo "/^.*:$nans2\$/d"
-			    read
 			fi
 		    
 			echo "$ans1:$ans2" >> $MOUNTFILE
@@ -169,19 +166,24 @@ function choosepkg()
     sect="Select Packages"
     
     if [[ -e $MOUNTFILE ]]; then
+	echo "Generating package list..."
+
 	packages=""
-	pacman -Qqg base base-devel | sort | \
-	while read pkg; do
+	pkgs=`pacman -Sqg base base-devel | sort`
+
+	for pkg in $pkgs; do
 	    on="on"
 	    if [[ -f $PKGSFILE ]] && ! grep -q $pkg $PKGSFILE; then
 		on="off"
 	    fi
 
-	    packages="$packages $pkg \"`pacman -Qi $pkg | grep Description | sed 's/.*: //'`\" $on"
+	    packages="$packages $pkg \"`pacman -Si $pkg | grep Description | sed 's/.*: //'`\" $on"
 	done
 
-	dialog --checklist "$sect" 20 45 10 $packages 2>$PKGSFILE
-	tr -d '"' < $PKGSFILE | tr ' ' "\n" > $PKGSFILE
+	# Bash is silly and doesn't interpret $packages properly unless we do this...
+	bash -c "dialog --checklist \"$sect\" 20 55 10 $packages 2>$PKGSFILE"
+	tr -d '"' < $PKGSFILE | tr ' ' "\n" > ${PKGSFILE}-tmp
+	mv ${PKGSFILE}-tmp $PKGSFILE
     else
 	showmsg "$sect" "You need to prepare the hard drives before you can do this!"
     fi
@@ -194,12 +196,13 @@ function installpkg()
     if [[ -e $PKGSFILE ]]; then
 	if yesno "$sect" "Are you sure you want to comit to the installation?"; then
 	    sort $MOUNTFILE | \
-	    while read $mount; do
+	    while read mount; do
 		device=`echo $mount | sed 's/:.*//'`
 		mpoint=`echo $mount | sed 's/.*://'`
 
-		if [[ "$device" == "swap" ]]; then
+		if [[ "$mpoint" == "swap" ]]; then
 		    echo "$device none swap sw 0 0" >> /tmp/fstab
+		    swapon $device
 		else
 		    dpass="0 0"
 		    if [[ "$mpoint" == "/" ]]; then
@@ -208,20 +211,25 @@ function installpkg()
 
 		    echo "$device $mpoint ext2 rw $dpass" >> /tmp/fstab
 
-		    if [[ ! -d /mnt$mpoint ]]; then
-			mkdir -p /mnt$mpoint
+		    if [[ ! -d ${INSTALLDIR}${mpoint} ]]; then
+			mkdir -p ${INSTALLDIR}${mpoint}
 		    fi
 
-		    mount -t ext2 $device /mnt$mpoint
+		    mount -t ext2 $device ${INSTALLDIR}${mpoint}
+		    fsysopts ${INSTALLDIR}${mpoint} --writable
 		fi
 
-		mv /tmp/fstab /mnt/etc/fstab
-
-		clear
-		mkdir -p /mnt/var/lib/pacman
-		pacman -S $(cat $PKGFILE) --noconfirm --config /etc/pacman-mnt.conf
-		showmsg "$sect" "Packages have been installed."
 	    done
+	    
+	    echo "Preparing for installation..."
+	    mkdir -p ${INSTALLDIR}/var/lib/pacman
+
+	    pacman -Syy --config /etc/pacman-mnt.conf
+	    pacman -S $(cat $PKGSFILE) --noconfirm --config /etc/pacman-mnt.conf
+
+	    mv /tmp/fstab ${INSTALLDIR}/etc/fstab
+
+	    showmsg "$sect" "Packages have been installed."
 	fi
     else
 	showmsg "$sect" "You need to select the packages before you can do this!"
@@ -232,20 +240,21 @@ function sysconf()
 {
     sect="Configure System"
 
-    if [[ -f /mnt/etc/fstab ]]; then
+    if [[ -f ${INSTALLDIR}/etc/fstab ]]; then
 	ans=0
-	while ! echo $CONFIGS | grep -q "^$ans Return"; do
-	    dialog --title "$sect" --menu "$MENU" 20 45 10 $CONFIGS 2>$ANSFILE
+	while ! grep -q "^$ans Return" /arch/configs; do
+	    bash -c "dialog --title \"$sect\" --menu \"$MENU\" 20 45 10 $(cat /arch/configs | tr "\n" ' ') 2>$ANSFILE"
 	    ans=`cat $ANSFILE`
 	    rm $ANSFILE
 
-	    cfg=`echo $CONFIGS | grep -q "^$ans" | sed 's/$ans //'`
-	    if [[ -e /mnt$cfg ]]; then
-		nano /mnt$cfg
-	    elif [[ "$cfg" == "\"Root Password\"" ]]; then
-		chroot /mnt "passwd root"
+	    cfg=`grep "^$ans " /arch/configs | sed 's/[0-9 ]*//'`
+	    if [[ -e ${INSTALLDIR}${cfg} ]]; then
+		nano ${INSTALLDIR}${cfg}
+	    elif [[ "$cfg" == '"Root Password"' ]]; then
+		chroot ${INSTALLDIR} passwd root
 	    fi
 	done
+	chroot ${INSTALLDIR} locale-gen
     else
 	showmsg "$sect" "You need to install the packages before you can do this!"
     fi
@@ -254,11 +263,11 @@ function sysconf()
 function installgrub()
 {
     sect="Install Bootloader"
-    if [[ -f /mnt/etc/fstab ]]; then
-	cp -a /mnt/lib/grub/i386-pc/* /mnt/boot/grub/
+    if [[ -f ${INSTALLDIR}/etc/fstab ]]; then
+	cp -a ${INSTALLDIR}/lib/grub/i386-pc/* ${INSTALLDIR}/boot/grub/
 
 	showmsg "$sect" "You must edit the GRUB configuration before you can continue."
-	nano /mnt/boot/grub/menu.lst
+	nano ${INSTALLDIR}/boot/grub/menu.lst
 
 	dialog --title "$sect" --inputbox "Enter device to install GRUB to:" 20 45 2>$ANSFILE
 	ans=`cat $ANSFILE`
