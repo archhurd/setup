@@ -6,7 +6,7 @@ MENU="Use the UP and DOWN keys to navigate the menus. Use TAB to switch between 
 ANSFILE="/tmp/ans"
 MOUNTFILE="/tmp/mountpoints"
 PKGSFILE="/tmp/packages"
-INSTALLDIR="/mnt/install"
+INSTALLDIR="/mnt"
 
 function welcome()
 {
@@ -20,7 +20,7 @@ function mainmenu()
 	dialog --title "Main Menu" --menu "$MENU" 20 45 10 \
             1 "Prepare Hard Drive(s)" \
             2 "Select Packages" \
-            3 "Install Packages" \
+            3 "Install System" \
             4 "Configure System" \
             5 "Install Bootloader" \
             6 "Exit Install" 2>$ANSFILE
@@ -34,8 +34,8 @@ function mainmenu()
             "2")      # Select Packages
 		choosepkg
 		;;
-            "3")      # Install Packages
-		installpkg
+            "3")      # Install System
+		installsys
 		;;
             "4")      # Configure System
 		sysconf
@@ -44,7 +44,7 @@ function mainmenu()
 		installgrub
 		;;
             "6" | "") # Exit Install
-		yousure && exit
+		yesno "$NAME" "Are you sure you want to exit the installation?" && exit
 		;;
 	esac
     done
@@ -55,8 +55,6 @@ function prephdds()
     sect="Prepare Hard Drive(s)"
     showmsg "$sect" "Ensure any hard drive and partition device nodes have been created with MAKEDEV before continuing."
 
-    pas=`ls /dev/hd[0-9]s*`
-    
     disks=""
     parts=""
     
@@ -67,7 +65,7 @@ function prephdds()
     done
 	
     pcount=1
-    for pa in $pas; do
+    for pa in /dev/hd[0-9]s*; do
         parts="${parts} ${pcount} ${pa}"
         pcount=$[ $pcount + 1 ]
     done
@@ -91,7 +89,7 @@ function prephdds()
 		ans1=`echo "$disks" | sed "s/.* $ans1 \(\/dev\/hd[0-9]\).*/\1/"`
 
 		if [[ -e $ans1 ]]; then
-		    yousuredata && cfdisk $ans1
+		    yesno "Warning" "This will destroy data on your HDD. Are you sure you want to continue?" && cfdisk $ans1
 		fi
 
 		yesno "Reboot required" "You must reboot for GNU Mach to re-read the partition tables, do you wish to do so now?" && reboot
@@ -114,10 +112,12 @@ function prephdds()
 			    
 			    case $ans2 in
 				"1")
-				    yousuredata && mkfs.ext2 -b 4096 -I 128 -o hurd $ans1
+				    yesno "Warning" "This will destroy data on your HDD. Are you sure you want to continue?" && \
+				    mkfs.ext2 -b 4096 -I 128 $ans1
 				    ;;
 				"2")
-				    yousuredata && mkswap $ans1
+				    yesno "Warning" "This will destroy data on your HDD. Are you sure you want to continue?" && \
+				    mkswap $ans1
 				    ;;
 			    esac
 			fi
@@ -189,12 +189,14 @@ function choosepkg()
     fi
 }
 
-function installpkg()
+function installsys()
 {
-    sect="Install Packages"
+    sect="Install System"
 
     if [[ -e $PKGSFILE ]]; then
-	if yesno "$sect" "Are you sure you want to comit to the installation?"; then
+	if yesno "$sect" "Are you sure you want to commit to the installation?"; then
+
+	    echo "Mounting filesystems and generating fstab..."
 	    sort $MOUNTFILE | \
 	    while read mount; do
 		device=`echo $mount | sed 's/:.*//'`
@@ -215,13 +217,12 @@ function installpkg()
 			mkdir -p ${INSTALLDIR}${mpoint}
 		    fi
 
-		    mount -t ext2 $device ${INSTALLDIR}${mpoint}
+		    settrans -a ${INSTALLDIR}${mpoint} /hurd/ext2fs $device
 		    fsysopts ${INSTALLDIR}${mpoint} --writable
 		fi
 
 	    done
 	    
-	    echo "Preparing for installation..."
 	    mkdir -p ${INSTALLDIR}/var/lib/pacman
 
 	    pacman -Syy --config /etc/pacman-mnt.conf
@@ -229,7 +230,12 @@ function installpkg()
 
 	    mv /tmp/fstab ${INSTALLDIR}/etc/fstab
 
-	    showmsg "$sect" "Packages have been installed."
+	    pushd ${INSTALLDIR}/dev
+	    MAKEDEV --devdir=/dev std
+	    MAKEDEV --devdir=/dev $(ls /dev | grep hd)
+	    popd
+
+	    showmsg "$sect" "System has been installed."
 	fi
     else
 	showmsg "$sect" "You need to select the packages before you can do this!"
@@ -251,10 +257,11 @@ function sysconf()
 	    if [[ -e ${INSTALLDIR}${cfg} ]]; then
 		nano ${INSTALLDIR}${cfg}
 	    elif [[ "$cfg" == '"Root Password"' ]]; then
-		chroot ${INSTALLDIR} passwd root
+		chroot ${INSTALLDIR} /usr/bin/passwd root
 	    fi
 	done
-	chroot ${INSTALLDIR} locale-gen
+	echo "Generating locales..."
+	chroot ${INSTALLDIR} /usr/sbin/locale-gen
     else
 	showmsg "$sect" "You need to install the packages before you can do this!"
     fi
@@ -271,9 +278,9 @@ function installgrub()
 
 	dialog --title "$sect" --inputbox "Enter device to install GRUB to:" 20 45 2>$ANSFILE
 	ans=`cat $ANSFILE`
-	rm $ANSFILE 
+	rm $ANSFILE
 
-	grub-install $ans
+	grub-install --root-directory=$INSTALLDIR $ans
 	
 	showmsg "$sect" "GRUB has been installed. You should now reboot into your newly-installed Arch Hurd system."
     else
@@ -284,16 +291,6 @@ function installgrub()
 function yesno()
 {
     dialog --title "$1" --yesno "$2" 6 40
-}
-
-function yousure()
-{
-    yesno "$NAME" "Are you sure you want to exit the installation?"
-}
-
-function yousuredata()
-{
-    yesno "Warning" "This will destroy data on your HDD. Are you sure you want to continue?"
 }
 
 function showmsg()
