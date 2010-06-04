@@ -135,7 +135,7 @@ function prephdds()
 		    if [[ "$ans1" != "$pcount" ]]; then
 			ans1=`echo "$parts" | sed "s/.* $ans1 \(\/dev\/hd[0-9]s[1-9]\).*/\1/"`
 
-			dialog --title "Choose mount points" --inputbox "Enter mount location (or 'swap'):" 10 45 2>$ANSFILE
+			dialog --title "Choose mount points" --inputbox "Enter mount location (or 'swap'):" 8 45 2>$ANSFILE
 			ans2=`cat $ANSFILE`
 			rm $ANSFILE 
 			
@@ -276,13 +276,15 @@ function installgrub()
 	showmsg "$sect" "You must edit the GRUB configuration before you can continue."
 	nano ${INSTALLDIR}/boot/grub/menu.lst
 
-	dialog --title "$sect" --inputbox "Enter device to install GRUB to:" 20 45 2>$ANSFILE
-	ans=`cat $ANSFILE`
-	rm $ANSFILE
+	showmsg "$sect" "Unfortunately there is a problem with the Arch Hurd GRUB package and you will need to install it manually."
 
-	grub-install --root-directory=$INSTALLDIR $ans
+	#dialog --title "$sect" --inputbox "Enter GRUB device to install to:" 8 45 2>$ANSFILE
+	#ans=`cat $ANSFILE`
+	#rm $ANSFILE
+
+	#chroot $INSTALLDIR grub-install "$ans"
 	
-	showmsg "$sect" "GRUB has been installed. You should now reboot into your newly-installed Arch Hurd system."
+	#showmsg "$sect" "GRUB has been installed. You should now reboot into your newly-installed Arch Hurd system."
     else
 	showmsg "$sect" "You need to install the packages before you can do this!"
     fi
