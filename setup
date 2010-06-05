@@ -259,9 +259,13 @@ function sysconf()
 	    elif [[ "$cfg" == '"Root Password"' ]]; then
 		chroot ${INSTALLDIR} /usr/bin/passwd root
 	    fi
+
+            if [[ "$cfg" == "/etc/locale.gen" ]]; then
+                showmsg "$sect" "After rebooting into your Arch Hurd installation you will need to run 'locale-gen'."
+            fi
 	done
-	echo "Generating locales..."
-	chroot ${INSTALLDIR} /usr/sbin/locale-gen
+	#echo "Generating locales..."
+	#chroot ${INSTALLDIR} /usr/sbin/locale-gen
     else
 	showmsg "$sect" "You need to install the packages before you can do this!"
     fi
