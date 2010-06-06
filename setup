@@ -217,8 +217,8 @@ function installsys()
 			mkdir -p ${INSTALLDIR}${mpoint}
 		    fi
 
-		    settrans -a ${INSTALLDIR}${mpoint} /hurd/ext2fs $device
-		    fsysopts ${INSTALLDIR}${mpoint} --writable
+		    settrans -a ${INSTALLDIR}${mpoint} /hurd/ext2fs $device &>/dev/null
+		    fsysopts ${INSTALLDIR}${mpoint} --writable &>/dev/null
 		fi
 
 	    done
