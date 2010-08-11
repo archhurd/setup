@@ -139,21 +139,21 @@ function prephdds()
 			ans2=`cat $ANSFILE`
 			rm $ANSFILE 
 			
-			if grep -q "$ans1:" $MOUNTFILE; then
-			    mpoint=`grep "$ans1:" $MOUNTFILE | sed 's/.*://'`
+			if grep -q ":$ans1" $MOUNTFILE; then
+			    mpoint=`grep ":$ans1" $MOUNTFILE | sed 's/:.*//'`
 			    nans1=$(echo "$ans1" | sed 's/\//\\\//g')
 
 			    yesno "Conflicting mount point" "$ans1 is already mounted to $mpoint; continue, removing the preexisting mount point?" && sed -i "/^$nans1:.*\$/d" $MOUNTFILE
 			fi
 			
-			if grep -q ":$ans2" $MOUNTFILE && [[ "$ans2" != "swap" ]]; then
-			    mpoint=`grep ":$ans2" $MOUNTFILE | sed 's/:.*//'`
+			if grep -q "$ans2:" $MOUNTFILE && [[ "$ans2" != "swap" ]]; then
+			    mpoint=`grep "$ans2:" $MOUNTFILE | sed 's/.*://'`
 			    nans2=$(echo "$ans2" | sed 's/\//\\\//g')
 
 			    yesno "Conflicting mount point" "$ans2 is already in use by $mpoint; continue, removing the preexisting mount point?" && sed -i "/^.*:$nans2\$/d" $MOUNTFILE
 			fi
 		    
-			echo "$ans1:$ans2" >> $MOUNTFILE
+			echo "$ans2:$ans1" >> $MOUNTFILE
 		    fi
 		done
 		;;
@@ -199,26 +199,29 @@ function installsys()
 	    echo "Mounting filesystems and generating fstab..."
 	    sort $MOUNTFILE | \
 	    while read mount; do
-		device=`echo $mount | sed 's/:.*//'`
-		mpoint=`echo $mount | sed 's/.*://'`
+		device=`echo $mount | sed 's/.*://'`
+		mpoint=`echo $mount | sed 's/:.*//'`
 
 		if [[ "$mpoint" == "swap" ]]; then
 		    echo "$device none swap sw 0 0" >> /tmp/fstab
 		    swapon $device
 		else
 		    dpass="0 0"
+                    mountto=${INSTALLDIR}${mpoint}
+
 		    if [[ "$mpoint" == "/" ]]; then
 			dpass="1 1"
-		    fi
+                        mountto=$INSTALLDIR
+                    fi
 
 		    echo "$device $mpoint ext2 rw $dpass" >> /tmp/fstab
-
-		    if [[ ! -d ${INSTALLDIR}${mpoint} ]]; then
-			mkdir -p ${INSTALLDIR}${mpoint}
+                    
+		    if [[ ! -e $mountto ]]; then
+			mkdir -p $mountto
 		    fi
-
-		    settrans -a ${INSTALLDIR}${mpoint} /hurd/ext2fs $device &>/dev/null
-		    fsysopts ${INSTALLDIR}${mpoint} --writable &>/dev/null
+                    
+		    settrans -a $mountto /hurd/ext2fs $device
+		    fsysopts $mountto --writable
 		fi
 
 	    done
