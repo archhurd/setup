@@ -61,15 +61,16 @@ function prephdds()
     dcount=1
     for device in /dev/hd[0-9]; do
         disks="${disks} ${dcount} ${device}"
+        parts="${parts} ${dcount} ${device}"
         dcount=$[ $dcount + 1 ]
     done
 	
-    pcount=1
+    pcount=$dcount
     for pa in /dev/hd[0-9]s*; do
         parts="${parts} ${pcount} ${pa}"
         pcount=$[ $pcount + 1 ]
     done
-    
+	
     ans="1"
     while [[ "$ans" != "" ]] && [[ "$ans" != "4" ]]; do
 	dialog --title "$sect" --menu "$MENU" 20 45 10 \
@@ -92,7 +93,7 @@ function prephdds()
 		    yesno "Warning" "This will destroy data on your HDD. Are you sure you want to continue?" && cfdisk $ans1
 		fi
 
-		yesno "Reboot required" "You must reboot for GNU Mach to re-read the partition tables, do you wish to do so now?" && reboot
+		yesnobig "Reboot required" "You must reboot for GNU Mach to re-read the partition tables, do you wish to do so now?" && reboot
                 ;;
 
             "2") # Format partitions
@@ -103,7 +104,7 @@ function prephdds()
 		    rm $ANSFILE
 
 		    if [[ "$ans1" != "$pcount" ]]; then
-			ans1=`echo "$parts" | sed "s/.* $ans1 \(\/dev\/hd[0-9]s[1-9]\).*/\1/"`
+                        ans1=`echo "$parts" | sed "s:\(^\| .* \)$ans1 \(/dev/hd[0-9s]*\).*:\2:" | sed 's:^1::'`
 			
 			if [[ -e $ans1 ]]; then
 			    dialog --title "Format Partitions" --menu "$MENU" 20 45 10 1 "ext2" 2 "swap" 2>$ANSFILE
@@ -133,7 +134,7 @@ function prephdds()
 		    rm $ANSFILE
 
 		    if [[ "$ans1" != "$pcount" ]]; then
-			ans1=`echo "$parts" | sed "s/.* $ans1 \(\/dev\/hd[0-9]s[1-9]\).*/\1/"`
+                        ans1=`echo "$parts" | sed "s:\(^\| .* \)$ans1 \(/dev/hd[0-9s]*\).*:\2:" | sed 's:^1::'`
 
 			dialog --title "Choose mount points" --inputbox "Enter mount location (or 'swap'):" 8 45 2>$ANSFILE
 			ans2=`cat $ANSFILE`
@@ -300,6 +301,11 @@ function installgrub()
 function yesno()
 {
     dialog --title "$1" --yesno "$2" 6 40
+}
+
+function yesnobig()
+{
+    dialog --title "$1" --yesno "$2" 8 40
 }
 
 function showmsg()
