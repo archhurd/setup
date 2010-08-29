@@ -127,7 +127,7 @@ function prephdds()
                 ;;
 
             "3") # Choose mount points
-		ans=0
+		ans1=0
 		while [[ "$ans1" != "$pcount" ]]; do
 		    dialog --title "Choose mount points" --menu "$MENU" 20 45 10 $parts $pcount "Return" 2>$ANSFILE
 		    ans1=`cat $ANSFILE`
