@@ -227,6 +227,7 @@ function installsys()
 
 	    done
 	    
+	    mkdir -p ${INSTALLDIR}/var/log
 	    mkdir -p ${INSTALLDIR}/var/lib/pacman
 
 	    pacman -Syy --config /etc/pacman-mnt.conf
