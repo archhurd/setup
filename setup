@@ -22,8 +22,7 @@ function mainmenu()
             2 "Select Packages" \
             3 "Install System" \
             4 "Configure System" \
-            5 "Install Bootloader" \
-            6 "Exit Install" 2>$ANSFILE
+            5 "Exit Install" 2>$ANSFILE
 	ans=`cat $ANSFILE`
 	rm $ANSFILE
 	
@@ -40,10 +39,7 @@ function mainmenu()
             "4")      # Configure System
 		sysconf
 		;;
-            "5")      # Install Bootloader
-		installgrub
-		;;
-            "6" | "") # Exit Install
+            "5")      # Exit installer
 		yesno "$NAME" "Are you sure you want to exit the installation?" && exit
 		;;
 	esac
@@ -170,7 +166,7 @@ function choosepkg()
 	echo "Generating package list..."
 
 	packages=""
-	pkgs=`pacman -Sqg base base-devel | sort`
+	pkgs=`pacman -Sqg base base-devel | sort | grep -v "could not open file"`
 
 	for pkg in $pkgs; do
 	    on="on"
@@ -204,7 +200,7 @@ function installsys()
 		mpoint=`echo $mount | sed 's/:.*//'`
 
 		if [[ "$mpoint" == "swap" ]]; then
-		    echo "$device none swap sw 0 0" >> /tmp/fstab
+		    echo "$device none swap defaults 0 0" >> /tmp/fstab
 		    swapon $device
 		else
 		    dpass="0 0"
@@ -215,7 +211,7 @@ function installsys()
                         mountto=$INSTALLDIR
                     fi
 
-		    echo "$device $mpoint ext2 rw $dpass" >> /tmp/fstab
+		    echo "$device $mpoint ext2 defaults $dpass" >> /tmp/fstab
                     
 		    if [[ ! -e $mountto ]]; then
 			mkdir -p $mountto
@@ -236,9 +232,21 @@ function installsys()
 	    mv /tmp/fstab ${INSTALLDIR}/etc/fstab
 
 	    pushd ${INSTALLDIR}/dev
-	    MAKEDEV --devdir=/dev std
+      # Make devices
+	    MAKEDEV --devdir=/dev std ptyp
 	    MAKEDEV --devdir=/dev $(ls /dev | grep hd)
+
+      # Random translators
+      settrans -cp random /hurd/random --secure
+      settrans -cp urandom /hurd/random --fast
+      chmod 0644 {u,}random
+
+      # Console input repeaters
+      ln -sf cons/kbd kbd
+      ln -sf cons/mouse mouse
 	    popd
+
+      cp ${INSTALLDIR}/lib/grub/i386-pc/* ${INSTALLDIR}/boot/grub/
 
 	    showmsg "$sect" "System has been installed."
 	fi
@@ -271,29 +279,6 @@ function sysconf()
 	done
 	#echo "Generating locales..."
 	#chroot ${INSTALLDIR} /usr/sbin/locale-gen
-    else
-	showmsg "$sect" "You need to install the packages before you can do this!"
-    fi
-}
-
-function installgrub()
-{
-    sect="Install Bootloader"
-    if [[ -f ${INSTALLDIR}/etc/fstab ]]; then
-	cp -a ${INSTALLDIR}/lib/grub/i386-pc/* ${INSTALLDIR}/boot/grub/
-
-	showmsg "$sect" "You must edit the GRUB configuration before you can continue."
-	nano ${INSTALLDIR}/boot/grub/menu.lst
-
-	showmsg "$sect" "Unfortunately there is a problem with the Arch Hurd GRUB package and you will need to install it manually."
-
-	#dialog --title "$sect" --inputbox "Enter GRUB device to install to:" 8 45 2>$ANSFILE
-	#ans=`cat $ANSFILE`
-	#rm $ANSFILE
-
-	#chroot $INSTALLDIR grub-install "$ans"
-	
-	#showmsg "$sect" "GRUB has been installed. You should now reboot into your newly-installed Arch Hurd system."
     else
 	showmsg "$sect" "You need to install the packages before you can do this!"
     fi
