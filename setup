@@ -136,20 +136,21 @@ function prephdds()
 			ans2=`cat $ANSFILE`
 			rm $ANSFILE 
 			
-			if grep -q ":$ans1" $MOUNTFILE; then
-			    mpoint=`grep ":$ans1" $MOUNTFILE | sed 's/:.*//'`
-			    nans1=$(echo "$ans1" | sed 's/\//\\\//g')
-
-			    yesno "Conflicting mount point" "$ans1 is already mounted to $mpoint; continue, removing the preexisting mount point?" && sed -i "/^$nans1:.*\$/d" $MOUNTFILE
-			fi
-			
-			if grep -q "$ans2:" $MOUNTFILE && [[ "$ans2" != "swap" ]]; then
-			    mpoint=`grep "$ans2:" $MOUNTFILE | sed 's/.*://'`
-			    nans2=$(echo "$ans2" | sed 's/\//\\\//g')
-
-			    yesno "Conflicting mount point" "$ans2 is already in use by $mpoint; continue, removing the preexisting mount point?" && sed -i "/^.*:$nans2\$/d" $MOUNTFILE
-			fi
-		    
+      if [[ -e $MOUNTFILE ]]; then
+			    if grep -q ":$ans1" $MOUNTFILE; then
+			        mpoint=`grep ":$ans1" $MOUNTFILE | sed 's/:.*//'`
+			        nans1=$(echo "$ans1" | sed 's/\//\\\//g')
+              
+			        yesno "Conflicting mount point" "$ans1 is already mounted to $mpoint; continue, removing the preexisting mount point?" && sed -i "/^$nans1:.*\$/d" $MOUNTFILE
+			    fi
+			    
+			    if grep -q "$ans2:" $MOUNTFILE && [[ "$ans2" != "swap" ]]; then
+			        mpoint=`grep "$ans2:" $MOUNTFILE | sed 's/.*://'`
+			        nans2=$(echo "$ans2" | sed 's/\//\\\//g')
+              
+			        yesno "Conflicting mount point" "$ans2 is already in use by $mpoint; continue, removing the preexisting mount point?" && sed -i "/^.*:$nans2\$/d" $MOUNTFILE
+			    fi
+		  fi
 			echo "$ans2:$ans1" >> $MOUNTFILE
 		    fi
 		done
