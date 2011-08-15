@@ -39,7 +39,7 @@ function mainmenu()
             "4")      # Configure System
 		sysconf
 		;;
-            "5")      # Exit installer
+            "5" | "") # Exit installer
 		yesno "$NAME" "Are you sure you want to exit the installation?" && exit
 		;;
 	esac
