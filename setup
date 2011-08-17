@@ -274,9 +274,14 @@ function sysconf()
 		chroot ${INSTALLDIR} /usr/bin/passwd root
 	    fi
 
-            if [[ "$cfg" == "/etc/locale.gen" ]]; then
-                showmsg "$sect" "After rebooting into your Arch Hurd installation you will need to run 'locale-gen'."
-            fi
+      case "$cfg" in
+          "/etc/locale.gen")
+              showmsg "$sect" "After rebooting into your Arch Hurd installation you will need to run 'locale-gen'."
+              ;;
+          "/boot/grub/menu.lst")
+              showmsg "$sect" "Before booting into your Arch Hurd installation you will need to manually install GRUB."
+              ;;
+      esac
 	done
 	#echo "Generating locales..."
 	#chroot ${INSTALLDIR} /usr/sbin/locale-gen
