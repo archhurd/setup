@@ -16,33 +16,33 @@ function welcome()
 function mainmenu()
 {
     ans=1
-    while [[ "$ans" != "" ]] && [[ "$ans" != "6" ]]; do
-	dialog --title "Main Menu" --menu "$MENU" 20 45 10 \
+    while true; do
+	      dialog --title "Main Menu" --menu "$MENU" 20 45 10 \
             1 "Prepare Hard Drive(s)" \
             2 "Select Packages" \
             3 "Install System" \
             4 "Configure System" \
             5 "Exit Install" 2>$ANSFILE
-	ans=`cat $ANSFILE`
-	rm $ANSFILE
-	
-	case "$ans" in
+	      ans=`cat $ANSFILE`
+	      rm $ANSFILE
+	      
+	      case "$ans" in
             "1")      # Prepare Hard Drive(s)
-		prephdds
-		;;
+		            prephdds
+		            ;;
             "2")      # Select Packages
-		choosepkg
-		;;
+		            choosepkg
+		            ;;
             "3")      # Install System
-		installsys
-		;;
+		            installsys
+		            ;;
             "4")      # Configure System
-		sysconf
-		;;
+		            sysconf
+		            ;;
             "5" | "") # Exit installer
-		yesno "$NAME" "Are you sure you want to exit the installation?" && exit
-		;;
-	esac
+		            yesno "$NAME" "Are you sure you want to exit the installation?" && exit
+		            ;;
+	      esac
     done
 }
 
@@ -238,16 +238,24 @@ function installsys()
 	    MAKEDEV --devdir=/dev $(ls /dev | grep hd)
 
       # Random translators
-      settrans -cp random /hurd/random --secure
-      settrans -cp urandom /hurd/random --fast
-      chmod 0644 {u,}random
+      if [[ -x ${INSTALLDIR}/hurd/random ]]; then
+          settrans -cp random /hurd/random --secure
+          settrans -cp urandom /hurd/random --fast
+          chmod 0644 {u,}random
+      fi
 
       # Console input repeaters
       ln -sf cons/kbd kbd
       ln -sf cons/mouse mouse
 	    popd
 
-      cp ${INSTALLDIR}/lib/grub/i386-pc/* ${INSTALLDIR}/boot/grub/
+      # Skel
+      cp ${INSTALLDIR}/etc/skel/.* ${INSTALLDIR}/root
+
+      # GRUB
+      if [[ -d ${INSTALLDIR}/lib/grub/i386-pc/ ]]; then
+          cp ${INSTALLDIR}/lib/grub/i386-pc/* ${INSTALLDIR}/boot/grub/
+      fi
 
 	    showmsg "$sect" "System has been installed."
 	fi
